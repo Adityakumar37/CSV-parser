@@ -1,0 +1,17 @@
+{
+  "name": "csv-parser",
+  "version": "1.0.0",
+  "description": "A lightweight and robust CSV parser",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  },
+  "keywords": [
+    "csv",
+    "parser",
+    "tokenizer"
+  ],
+  "author": "",
+  "license": "MIT"
+}
