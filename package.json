@@ -1,17 +1,21 @@
 {
-  "name": "csv-parser",
-  "version": "1.0.0",
-  "description": "A lightweight and robust CSV parser",
-  "main": "src/index.js",
+  "name": "csv-easy",
+  "version": "0.1.0",
+  "description": "A lightweight, zero-dependency CSV parser for Node.js",
   "type": "module",
+  "main": "./src/index.js",
+  "exports": "./src/index.js",
   "scripts": {
-    "test": "node --test tests/*.test.js"
+    "test": "node --test"
   },
   "keywords": [
     "csv",
     "parser",
     "tokenizer"
   ],
+  "engines": {
+    "node": ">=18"
+  },
   "author": "",
   "license": "MIT"
 }
