@@ -35,19 +35,37 @@ const STATE_CR          = "CR";            // just saw a '\r'
  * the full string is fed in a single `feed()` call followed by `finish()`.
  */
 export class Tokenizer {
-  constructor() {
+  /**
+   * @param {object} [options]
+   */
+  constructor(options = {}) {
+    this._delimiter = options.delimiter !== undefined ? options.delimiter : ",";
+    this._quote = options.quote !== undefined ? options.quote : '"';
+    this._trim = options.trim !== undefined ? options.trim : false;
+    this._skipEmptyLines =
+      options.skipEmptyLines !== undefined ? options.skipEmptyLines : true;
+
     /** @type {string} */
     this._state = STATE_FIELD_START;
 
     /** Characters accumulated for the current field. */
     this._field = "";
 
+    /** Whether the current field was opened with a quote. */
+    this._isQuoted = false;
+
+    /** Whether any field in the current row was opened with a quote. */
+    this._rowHadQuote = false;
+
     /** Fields accumulated for the current row. */
     this._row = [];
 
+    /** Parallel array: whether each field in the current row was quoted. */
+    this._rowQuoted = [];
+
     /**
-     * 1-based row counter.  Blank rows are excluded from the count so this
-     * matches the spec's "rows" (records), not physical lines.
+     * 1-based row counter.  Blank rows are excluded from the count (when skipEmptyLines is true)
+     * so this matches the spec's "rows" (records), not physical lines.
      */
     this._rowNumber = 0;
 
@@ -56,6 +74,12 @@ export class Tokenizer {
      * Used in error messages for unterminated-quote errors.
      */
     this._quotedFieldOpenRow = 0;
+
+    /** Whether feed() has been called at least once (for first-chunk BOM strip). */
+    this._started = false;
+
+    /** Current batch of completed rows drained during feed() or finish(). */
+    this._currentBatch = null;
 
     /**
      * Accumulates completed rows.
@@ -67,23 +91,35 @@ export class Tokenizer {
   // ── public API ─────────────────────────────────────────────────────────────
 
   /**
-   * Feed the complete CSV string.  Strip a leading BOM if present.
+   * Feed CSV text. Strip a leading BOM on the first chunk only.
+   * Returns newly completed rows produced by this chunk.
    * @param {string} input
+   * @returns {Array<{fields: string[], rowNumber: number}>}
    */
   feed(input) {
-    // Strip UTF-8 BOM (\uFEFF) that Excel / some editors prepend.
-    if (input.charCodeAt(0) === 0xfeff) {
-      input = input.slice(1);
+    if (!this._started) {
+      this._started = true;
+      if (input.charCodeAt(0) === 0xfeff) {
+        input = input.slice(1);
+      }
     }
 
+    const batch = [];
+    this._currentBatch = batch;
+
     for (let i = 0; i < input.length; i++) {
-      this._processChar(input[i], input[i + 1]);
+      this._processChar(input[i]);
     }
+
+    this._currentBatch = null;
+    return batch;
   }
 
   /**
    * Signal end-of-input.  Flushes the final field / row.
+   * Returns final completed rows produced by flushing.
    * Throws CsvParseError for an unterminated quote.
+   * @returns {Array<{fields: string[], rowNumber: number}>}
    */
   finish() {
     if (this._state === STATE_QUOTED) {
@@ -92,6 +128,9 @@ export class Tokenizer {
         this._quotedFieldOpenRow
       );
     }
+
+    const batch = [];
+    this._currentBatch = batch;
 
     // A trailing CR that was never followed by LF.
     if (this._state === STATE_CR) {
@@ -103,16 +142,18 @@ export class Tokenizer {
       this._commitField();
       this._commitRow();
     }
+
+    this._currentBatch = null;
+    return batch;
   }
 
   // ── private helpers ────────────────────────────────────────────────────────
 
   /**
    * Process a single character.
-   * @param {string} ch   current character
-   * @param {string} next next character (may be undefined at end of string)
+   * @param {string} ch current character
    */
-  _processChar(ch, next) {
+  _processChar(ch) {
     switch (this._state) {
       case STATE_FIELD_START:
         this._onFieldStart(ch);
@@ -134,11 +175,13 @@ export class Tokenizer {
 
   /** Entered at the beginning of each field. */
   _onFieldStart(ch) {
-    if (ch === '"') {
+    if (ch === this._quote) {
       // Record which row this quoted field opened on for error reporting.
       this._quotedFieldOpenRow = this._rowNumber + 1; // +1: not yet committed
+      this._isQuoted = true;
+      this._rowHadQuote = true;
       this._state = STATE_QUOTED;
-    } else if (ch === ",") {
+    } else if (ch === this._delimiter) {
       // Empty unquoted field followed immediately by delimiter.
       this._commitField();
       // state stays FIELD_START
@@ -158,7 +201,7 @@ export class Tokenizer {
 
   /** Inside an unquoted field. */
   _onUnquoted(ch) {
-    if (ch === ",") {
+    if (ch === this._delimiter) {
       this._commitField();
       this._state = STATE_FIELD_START;
     } else if (ch === "\r") {
@@ -168,36 +211,37 @@ export class Tokenizer {
       this._commitField();
       this._commitRow();
     } else {
-      // Stray '"' inside an unquoted field → treated as a literal character.
+      // Stray quote inside an unquoted field → treated as a literal character.
       this._field += ch;
     }
   }
 
   /** Inside a quoted field. */
   _onQuoted(ch) {
-    if (ch === '"') {
-      // Could be an escaped quote ("") or the closing quote.
+    if (ch === this._quote) {
+      // Could be an escaped quote or the closing quote.
       this._state = STATE_QUOTE_END;
     } else {
-      // Everything else — including commas, \n, \r — is literal text.
+      // Everything else — including delimiter, \n, \r — is literal text.
       this._field += ch;
     }
   }
 
   /**
-   * We just saw a closing `"`.  Wait for the next character to decide:
-   *   - another `"` → escaped quote, stay in quoted state
-   *   - `,`         → field ends, delimiter
-   *   - `\r`/`\n`  → field ends, row ends
-   *   - end-of-input → handled in finish()
+   * We just saw a closing quote.  Wait for the next character to decide:
+   *   - another quote → escaped quote, stay in quoted state
+   *   - delimiter     → field ends, delimiter
+   *   - \r/\n         → field ends, row ends
+   *   - end-of-input  → handled in finish()
+   *   - whitespace    → ignored after closing quote when trim is true
    *   - anything else → error (characters after closing quote)
    */
   _onQuoteEnd(ch) {
-    if (ch === '"') {
-      // Escaped quote: emit a single '"' and continue inside the quoted field.
-      this._field += '"';
+    if (ch === this._quote) {
+      // Escaped quote: emit a single quote and continue inside the quoted field.
+      this._field += this._quote;
       this._state = STATE_QUOTED;
-    } else if (ch === ",") {
+    } else if (ch === this._delimiter) {
       this._commitField();
       this._state = STATE_FIELD_START;
     } else if (ch === "\r") {
@@ -206,6 +250,8 @@ export class Tokenizer {
     } else if (ch === "\n") {
       this._commitField();
       this._commitRow();
+    } else if (this._trim && (ch === " " || ch === "\t")) {
+      // Trailing whitespace after closing quote allowed with trim: true
     } else {
       // Characters found after the closing quote → malformed.
       throw new CsvParseError(
@@ -229,34 +275,48 @@ export class Tokenizer {
       // Lone \r – row already had its field committed; commit the row, then
       // re-process `ch` as if we are at the start of a new field.
       this._commitRow();
-      this._processChar(ch, undefined);
+      this._processChar(ch);
     }
   }
 
   /** Push the current field buffer onto the current row, then reset. */
   _commitField() {
-    this._row.push(this._field);
+    let val = this._field;
+    if (this._trim && !this._isQuoted) {
+      val = val.trim();
+    }
+    this._row.push(val);
+    this._rowQuoted.push(this._isQuoted);
     this._field = "";
+    this._isQuoted = false;
     this._state = STATE_FIELD_START;
   }
 
   /**
    * Evaluate the accumulated row:
-   *   - Blank rows (zero non-empty fields, single empty field) → skip, do not
-   *     increment the row counter.
+   *   - Blank rows (zero non-empty fields, single empty field without quotes) → skip (when skipEmptyLines is true),
+   *     do not increment the row counter.
    *   - Otherwise push as a record and increment the counter.
    */
   _commitRow() {
     const fields = this._row;
+    const quoted = this._rowQuoted;
+    const hadQuote = this._rowHadQuote;
     this._row = [];
+    this._rowQuoted = [];
+    this._rowHadQuote = false;
     this._state = STATE_FIELD_START;
 
-    // A "blank" row is one that has exactly one field and that field is empty.
-    // This covers both a truly empty line and a line with only CR/LF.
-    const isBlank = fields.length === 1 && fields[0] === "";
-    if (isBlank) return;
+    // A "blank" row is one that has exactly one field and that field is empty,
+    // and neither that field nor the row had quotes.
+    const isBlank = fields.length === 1 && fields[0] === "" && !hadQuote;
+    if (this._skipEmptyLines && isBlank) return;
 
     this._rowNumber++;
-    this.rows.push({ fields, rowNumber: this._rowNumber });
+    const row = { fields, quoted, rowNumber: this._rowNumber };
+    this.rows.push(row);
+    if (this._currentBatch) {
+      this._currentBatch.push(row);
+    }
   }
 }
