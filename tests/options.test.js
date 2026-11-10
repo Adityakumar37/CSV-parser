@@ -3,10 +3,6 @@ import assert from "node:assert/strict";
 import { parseCSV, CsvParseError } from "../src/index.js";
 
 const plain = (rows) => rows.map((r) => ({ ...r }));
-
-// ────────────────────────────────────────────────────────────────────────────
-// 1. Option: delimiter
-// ────────────────────────────────────────────────────────────────────────────
 describe("Option: delimiter", () => {
   it("defaults to comma", () => {
     const csv = "a,b\n1,2";
@@ -32,8 +28,6 @@ describe("Option: delimiter", () => {
     const result = parseCSV(csv, { delimiter: "|" });
     assert.deepStrictEqual(plain(result), [{ col1: "val1", col2: "val2" }]);
   });
-
-  // Combination test: semicolon delimiter with quoted semicolons
   it("parses semicolon delimiter with quoted semicolons", () => {
     const csv = 'name;bio;city\nAditya;"Developer; Loves coding; JS";Pune';
     const result = parseCSV(csv, { delimiter: ";" });
@@ -46,10 +40,6 @@ describe("Option: delimiter", () => {
     ]);
   });
 });
-
-// ────────────────────────────────────────────────────────────────────────────
-// 2. Option: quote
-// ────────────────────────────────────────────────────────────────────────────
 describe("Option: quote", () => {
   it("supports custom single quote character", () => {
     const csv = "name,title\nAditya,'Software Engineer, Lead'";
@@ -75,10 +65,6 @@ describe("Option: quote", () => {
     );
   });
 });
-
-// ────────────────────────────────────────────────────────────────────────────
-// 3. Option: trim
-// ────────────────────────────────────────────────────────────────────────────
 describe("Option: trim", () => {
   it("defaults to false (preserves whitespace)", () => {
     const csv = " name , age \n  Aditya  ,  18  ";
@@ -95,12 +81,8 @@ describe("Option: trim", () => {
       { name: "Aditya", age: "18" },
     ]);
   });
-
-  // Combination test: trim with quoted fields
   it("trims unquoted fields and headers while keeping quoted content exactly as written", () => {
     const csv = '  name  ,  age  ,  note  \n  Aditya  ,"  18  ",  " unquoted lookalike " ';
-    // Note: third field starts with space so it's unquoted until parsed,
-    // but second field starts immediately with quote so it's quoted.
     const csv2 = '  name  ,  age  ,  bio  \n  Aditya  ,"  18  ","  coder  "';
     const result = parseCSV(csv2, { trim: true });
     assert.deepStrictEqual(plain(result), [
@@ -119,17 +101,11 @@ describe("Option: trim", () => {
     ]);
   });
 });
-
-// ────────────────────────────────────────────────────────────────────────────
-// 4. Option: headers
-// ────────────────────────────────────────────────────────────────────────────
 describe("Option: headers", () => {
   it("defaults to true", () => {
     const csv = "a,b\n1,2";
     assert.deepStrictEqual(plain(parseCSV(csv)), [{ a: "1", b: "2" }]);
   });
-
-  // Combination test: headers: false
   it("returns an array of arrays of strings when headers is false", () => {
     const csv = "a,b,c\n1,2,3\n4,5,6";
     const result = parseCSV(csv, { headers: false });
@@ -164,8 +140,6 @@ describe("Option: headers", () => {
       { name: "Rahul", age: "20" },
     ]);
   });
-
-  // Combination test: custom headers array with a column count mismatch
   it("throws CsvParseError when custom headers count mismatches first row", () => {
     const csv = "Aditya,18,extra\nRahul,20,extra";
     assert.throws(
@@ -188,10 +162,6 @@ describe("Option: headers", () => {
     );
   });
 });
-
-// ────────────────────────────────────────────────────────────────────────────
-// 5. Option: skipEmptyLines
-// ────────────────────────────────────────────────────────────────────────────
 describe("Option: skipEmptyLines", () => {
   it("defaults to true", () => {
     const csv = "a,b\n\n1,2\n\n3,4\n";
@@ -220,10 +190,6 @@ describe("Option: skipEmptyLines", () => {
     );
   });
 });
-
-// ────────────────────────────────────────────────────────────────────────────
-// 6. Option: maxRows
-// ────────────────────────────────────────────────────────────────────────────
 describe("Option: maxRows", () => {
   it("defaults to Infinity (allows all rows)", () => {
     const csv = "a\n1\n2\n3\n4\n5";
@@ -236,8 +202,6 @@ describe("Option: maxRows", () => {
     const result = parseCSV(csv, { maxRows: 2 });
     assert.equal(result.length, 2);
   });
-
-  // Combination test: maxRows exceeded
   it("throws CsvParseError when data rows exceed maxRows", () => {
     const csv = "name,age\nAditya,18\nRahul,20\nAman,19";
     assert.throws(
@@ -279,10 +243,6 @@ describe("Option: maxRows", () => {
     );
   });
 });
-
-// ────────────────────────────────────────────────────────────────────────────
-// 7. Validation: Unknown option keys
-// ────────────────────────────────────────────────────────────────────────────
 describe("Validation: Unknown option keys", () => {
   it("throws TypeError on 'delimeter' typo", () => {
     assert.throws(
@@ -302,10 +262,6 @@ describe("Validation: Unknown option keys", () => {
     );
   });
 });
-
-// ────────────────────────────────────────────────────────────────────────────
-// 8. Validation: Invalid option values
-// ────────────────────────────────────────────────────────────────────────────
 describe("Validation: Invalid option values", () => {
   it("throws TypeError when options is not a plain object", () => {
     assert.throws(() => parseCSV("a,b\n1,2", null), TypeError);
@@ -362,7 +318,6 @@ describe("Validation: Invalid option values", () => {
       () => parseCSV("a,b\n1,2", { quote: "\r" }),
       (err) => err instanceof TypeError && /quote/.test(err.message)
     );
-    // Quote same as delimiter
     assert.throws(
       () => parseCSV("a,b\n1,2", { quote: "," }),
       (err) => err instanceof TypeError && /quote/.test(err.message)
@@ -433,10 +388,6 @@ describe("Validation: Invalid option values", () => {
     );
   });
 });
-
-// ────────────────────────────────────────────────────────────────────────────
-// 9. Edge cases & Regression tests
-// ────────────────────────────────────────────────────────────────────────────
 describe("Edge cases & Regression tests", () => {
   it("quoted empty value in single-column file is kept", () => {
     const out = parseCSV('name\n""\nAditya');

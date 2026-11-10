@@ -1,15 +1,6 @@
 import { CsvParseError } from "./tokenizer.js";
 import { buildCaster } from "./caster.js";
 
-/**
- * Build records or raw rows from the tokenizer's rows.
- *
- * @param {Array<{fields: string[], quoted: boolean[], rowNumber: number}>} rows
- *   Output of the Tokenizer.
- * @param {object} [options]
- * @returns {Array<object|Array<any>>}
- * @throws {CsvParseError} On duplicate headers, mismatched field counts, or maxRows exceeded.
- */
 export function buildRecords(rows, options = {}) {
   const {
     headers: headersOpt = true,
@@ -22,17 +13,16 @@ export function buildRecords(rows, options = {}) {
 
   const castRow = buildCaster(castOpt);
 
-  // ── Mode: headers === false ───────────────────────────────────────────────
   if (headersOpt === false) {
-    const expectedCols = rows[0].fields.length;
+    const cols = rows[0].fields.length;
     const result = [];
 
     for (let i = 0; i < rows.length; i++) {
       const { fields, quoted, rowNumber } = rows[i];
 
-      if (fields.length !== expectedCols) {
+      if (fields.length !== cols) {
         throw new CsvParseError(
-          `Row ${rowNumber} has ${fields.length} fields but expected ${expectedCols}.`,
+          `Row ${rowNumber} has ${fields.length} fields but expected ${cols}.`,
           rowNumber
         );
       }
@@ -54,7 +44,6 @@ export function buildRecords(rows, options = {}) {
     return result;
   }
 
-  // ── Mode: headers is custom array (string[]) ──────────────────────────────
   if (Array.isArray(headersOpt)) {
     const headers = trim ? headersOpt.map((h) => h.trim()) : [...headersOpt];
     const seen = new Set();
@@ -64,15 +53,15 @@ export function buildRecords(rows, options = {}) {
       }
       seen.add(h);
     }
-    const expectedCols = headers.length;
+    const cols = headers.length;
     const records = [];
 
     for (let i = 0; i < rows.length; i++) {
       const { fields, quoted, rowNumber } = rows[i];
 
-      if (fields.length !== expectedCols) {
+      if (fields.length !== cols) {
         throw new CsvParseError(
-          `Row ${rowNumber} has ${fields.length} fields but expected ${expectedCols}.`,
+          `Row ${rowNumber} has ${fields.length} fields but expected ${cols}.`,
           rowNumber
         );
       }
@@ -98,11 +87,9 @@ export function buildRecords(rows, options = {}) {
     return records;
   }
 
-  // ── Mode: headers === true (default) ──────────────────────────────────────
   const headerRow = rows[0];
   const headers = headerRow.fields;
 
-  // Duplicate headers would silently drop a column – disallow them.
   const seen = new Set();
   for (const h of headers) {
     if (seen.has(h)) {

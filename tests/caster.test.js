@@ -3,10 +3,6 @@ import assert from "node:assert/strict";
 import { parseCSV, CsvParseError } from "../src/index.js";
 
 const plain = (rows) => rows.map((r) => ({ ...r }));
-
-// ────────────────────────────────────────────────────────────────────────────
-// 1. Default behaviour: cast disabled (Phase 1/2 unchanged)
-// ────────────────────────────────────────────────────────────────────────────
 describe("cast: default (false)", () => {
   it("all values stay strings when cast is not specified", () => {
     const csv = "name,age,active\nAditya,18,true";
@@ -22,10 +18,6 @@ describe("cast: default (false)", () => {
     assert.deepStrictEqual(plain(result), [{ a: "42", b: "false" }]);
   });
 });
-
-// ────────────────────────────────────────────────────────────────────────────
-// 2. Number casting
-// ────────────────────────────────────────────────────────────────────────────
 describe("cast: number rule", () => {
   it('casts "18" to 18', () => {
     const r = parseCSV("a\n18", { cast: true });
@@ -51,8 +43,6 @@ describe("cast: number rule", () => {
     const r = parseCSV("a\n-0.5", { cast: true });
     assert.strictEqual(r[0].a, -0.5);
   });
-
-  // ── Non-matching edge cases ───────────────────────────────────────────
   it('"007" stays string (leading zero)', () => {
     const r = parseCSV("a\n007", { cast: true });
     assert.strictEqual(r[0].a, "007");
@@ -74,7 +64,6 @@ describe("cast: number rule", () => {
   });
 
   it('"1,000" stays string (contains comma — parsed as separate fields with headers:false)', () => {
-    // With default delimiter, "1,000" splits into two fields. Test with semicolon.
     const r = parseCSV("a\n1,000", { cast: true, delimiter: ";" });
     assert.strictEqual(r[0].a, "1,000");
   });
@@ -96,16 +85,10 @@ describe("cast: number rule", () => {
 
   it("Number.MAX_SAFE_INTEGER + 1 stays string", () => {
     const big = String(Number.MAX_SAFE_INTEGER + 2); // 9007199254740993
-    // This may or may not equal the original string due to precision; but the
-    // value we put in the CSV is the literal digits, which won't round-trip.
     const r = parseCSV(`a\n9007199254740993`, { cast: true });
     assert.strictEqual(r[0].a, "9007199254740993");
   });
 });
-
-// ────────────────────────────────────────────────────────────────────────────
-// 3. Boolean casting
-// ────────────────────────────────────────────────────────────────────────────
 describe("cast: boolean rule", () => {
   it('"true" becomes true', () => {
     const r = parseCSV("a\ntrue", { cast: true });
@@ -132,10 +115,6 @@ describe("cast: boolean rule", () => {
     assert.strictEqual(r[0].a, "yes");
   });
 });
-
-// ────────────────────────────────────────────────────────────────────────────
-// 4. Null casting – empty unquoted vs quoted empty
-// ────────────────────────────────────────────────────────────────────────────
 describe("cast: null rule", () => {
   it("empty unquoted field becomes null", () => {
     const r = parseCSV("a,b\n1,", { cast: true });
@@ -152,10 +131,6 @@ describe("cast: null rule", () => {
     assert.strictEqual(r[0][1], null);
   });
 });
-
-// ────────────────────────────────────────────────────────────────────────────
-// 5. Date casting (opt-in only)
-// ────────────────────────────────────────────────────────────────────────────
 describe("cast: date rule", () => {
   it("date is NOT cast with cast: true (date defaults to false)", () => {
     const r = parseCSV("a\n2024-06-15", { cast: true });
@@ -204,10 +179,6 @@ describe("cast: date rule", () => {
     assert.strictEqual(r[0].a, "2024-6-15");
   });
 });
-
-// ────────────────────────────────────────────────────────────────────────────
-// 6. Quoted fields are never auto-cast
-// ────────────────────────────────────────────────────────────────────────────
 describe("cast: quoted fields stay strings", () => {
   it('quoted "18" stays the string "18"', () => {
     const r = parseCSV('a\n"18"', { cast: true });
@@ -227,10 +198,6 @@ describe("cast: quoted fields stay strings", () => {
     assert.strictEqual(typeof r[0].a, "string");
   });
 });
-
-// ────────────────────────────────────────────────────────────────────────────
-// 7. Header names are never cast
-// ────────────────────────────────────────────────────────────────────────────
 describe("cast: headers are never cast", () => {
   it("header named 'true' stays string key", () => {
     const r = parseCSV("true,false\n1,2", { cast: true });
@@ -241,10 +208,6 @@ describe("cast: headers are never cast", () => {
     assert.strictEqual(r[0]["false"], 2);
   });
 });
-
-// ────────────────────────────────────────────────────────────────────────────
-// 8. Per-rule object form
-// ────────────────────────────────────────────────────────────────────────────
 describe("cast: per-rule object", () => {
   it("only number enabled", () => {
     const r = parseCSV("a,b,c\n42,true,", {
@@ -281,10 +244,6 @@ describe("cast: per-rule object", () => {
     assert.strictEqual(r[0].d, "2024-06-15"); // date defaults false
   });
 });
-
-// ────────────────────────────────────────────────────────────────────────────
-// 9. Custom cast function
-// ────────────────────────────────────────────────────────────────────────────
 describe("cast: custom function", () => {
   it("receives correct context for each field", () => {
     const contexts = [];
@@ -294,18 +253,13 @@ describe("cast: custom function", () => {
         return value;
       },
     });
-    // Data row is row 2 (row 1 is header).
     assert.strictEqual(contexts.length, 2);
-
-    // First field: unquoted "Aditya"
     assert.deepStrictEqual(contexts[0], {
       column: "name",
       index: 0,
       row: 2,
       quoted: false,
     });
-
-    // Second field: quoted "18"
     assert.deepStrictEqual(contexts[1], {
       column: "age",
       index: 1,
@@ -357,10 +311,6 @@ describe("cast: custom function", () => {
     );
   });
 });
-
-// ────────────────────────────────────────────────────────────────────────────
-// 10. headers: false with cast
-// ────────────────────────────────────────────────────────────────────────────
 describe("cast with headers: false", () => {
   it("casts all rows including what would be the header row", () => {
     const r = parseCSV("1,2\n3,4", { headers: false, cast: true });
@@ -376,10 +326,6 @@ describe("cast with headers: false", () => {
     assert.strictEqual(r[1][1], null);
   });
 });
-
-// ────────────────────────────────────────────────────────────────────────────
-// 11. Custom headers array with cast
-// ────────────────────────────────────────────────────────────────────────────
 describe("cast with custom headers array", () => {
   it("casts data rows using custom headers", () => {
     const r = parseCSV("42,true", {
@@ -401,10 +347,6 @@ describe("cast with custom headers array", () => {
     assert.deepStrictEqual(cols, ["x", "y"]);
   });
 });
-
-// ────────────────────────────────────────────────────────────────────────────
-// 12. Validation: invalid cast option values
-// ────────────────────────────────────────────────────────────────────────────
 describe("Validation: cast option", () => {
   it("throws TypeError for cast: 'true' (string)", () => {
     assert.throws(
@@ -448,10 +390,6 @@ describe("Validation: cast option", () => {
     );
   });
 });
-
-// ────────────────────────────────────────────────────────────────────────────
-// 13. Combined: cast with other options
-// ────────────────────────────────────────────────────────────────────────────
 describe("cast combined with other options", () => {
   it("cast + trim: trimmed value is then cast", () => {
     const r = parseCSV("a\n  42  ", { cast: true, trim: true });
