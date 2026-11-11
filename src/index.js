@@ -2,8 +2,10 @@ import { Tokenizer, CsvParseError } from "./tokenizer.js";
 import { buildRecords } from "./parser.js";
 import { validateOptions } from "./options.js";
 import { createParseStream as _createParseStream } from "./stream.js";
+import { csvMiddleware } from "./middleware.js";
 
 export { CsvParseError };
+export { csvMiddleware };
 
 export function createParseStream(options = {}) {
   validateOptions(options);

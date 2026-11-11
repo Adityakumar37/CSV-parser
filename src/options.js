@@ -6,6 +6,9 @@ const VALID_OPTIONS = new Set([
   "skipEmptyLines",
   "maxRows",
   "cast",
+  "maxBytes",
+  "property",
+  "timeout",
 ]);
 
 function validateOptions(options) {
@@ -94,6 +97,16 @@ function validateOptions(options) {
     ) {
       throw new TypeError('Option "maxRows" must be a non-negative number.');
     }
+  }
+
+  for (const key of ["maxBytes", "timeout"]) {
+    if (key in options && (typeof options[key] !== "number" || !Number.isFinite(options[key]) || options[key] < 0)) {
+      throw new TypeError(`Option "${key}" must be a non-negative number.`);
+    }
+  }
+
+  if ("property" in options && (typeof options.property !== "string" || options.property.length === 0)) {
+    throw new TypeError('Option "property" must be a non-empty string.');
   }
 
   if ("cast" in options) {
