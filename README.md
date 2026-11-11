@@ -39,6 +39,22 @@ fs.createReadStream("data.csv")
   .on("data", (row) => console.log(row));
 ```
 
+### Express middleware
+
+`csvMiddleware(options)` reads a raw `text/csv` request or parses files already added by multer. It puts the parsed rows on `req.csv` and calls `next()`; errors go to `next(err)`.
+
+```js
+import express from "express";
+import { csvMiddleware } from "csv-easy";
+
+const app = express();
+app.post("/upload", csvMiddleware({ cast: true }), (req, res) => {
+  res.json(req.csv);
+});
+```
+
+Middleware also accepts `maxBytes` (default `1_000_000`), `property` (default `"csv"`), and `timeout` in milliseconds (default `30_000`). Parsing options such as `delimiter`, `headers`, `maxRows`, and `cast` work the same way as `parseCSV`.
+
 By default all values are returned as **strings**. Enable type casting with the `cast` option to convert numbers, booleans, nulls, and dates automatically.
 
 ## Options
