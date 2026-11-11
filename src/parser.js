@@ -1,136 +1,87 @@
 import { CsvParseError } from "./tokenizer.js";
 import { buildCaster } from "./caster.js";
 
-export function buildRecords(rows, options = {}) {
-  const {
-    headers: headersOpt = true,
-    trim = false,
-    maxRows = Infinity,
-    cast: castOpt = false,
-  } = options;
+// createRowBuilder returns a function that takes one tokenizer row and returns
+// the finished record (object or array), or null if the row was the header row.
+// Throws CsvParseError on structural problems.
+export function createRowBuilder(options = {}) {
+  const headersOpt = options.headers !== undefined ? options.headers : true;
+  const trim = options.trim || false;
+  const maxRows = options.maxRows !== undefined ? options.maxRows : Infinity;
+  const castRow = buildCaster(options.cast || false);
 
-  if (rows.length === 0) return [];
+  let headers = null;      // resolved column names (null until first data row for headers:true)
+  let cols = -1;           // expected column count
+  let count = 0;           // data rows emitted so far
+  let headersDone = false; // true once headers are resolved
 
-  const castRow = buildCaster(castOpt);
-
-  if (headersOpt === false) {
-    const cols = rows[0].fields.length;
-    const result = [];
-
-    for (let i = 0; i < rows.length; i++) {
-      const { fields, quoted, rowNumber } = rows[i];
-
-      if (fields.length !== cols) {
-        throw new CsvParseError(
-          `Row ${rowNumber} has ${fields.length} fields but expected ${cols}.`,
-          rowNumber
-        );
-      }
-
-      if (result.length >= maxRows) {
-        throw new CsvParseError(
-          `Row limit of ${maxRows} exceeded.`,
-          rowNumber
-        );
-      }
-
-      if (castRow) {
-        result.push(castRow(fields, quoted, rowNumber, null));
-      } else {
-        result.push(fields);
-      }
-    }
-
-    return result;
-  }
-
+  // pre-resolve custom headers array
   if (Array.isArray(headersOpt)) {
-    const headers = trim ? headersOpt.map((h) => h.trim()) : [...headersOpt];
+    headers = trim ? headersOpt.map((h) => h.trim()) : headersOpt.slice();
     const seen = new Set();
     for (const h of headers) {
-      if (seen.has(h)) {
-        throw new TypeError(`Duplicate header name "${h}" in headers option.`);
-      }
+      if (seen.has(h)) throw new TypeError(`Duplicate header name "${h}" in headers option.`);
       seen.add(h);
     }
-    const cols = headers.length;
-    const records = [];
-
-    for (let i = 0; i < rows.length; i++) {
-      const { fields, quoted, rowNumber } = rows[i];
-
-      if (fields.length !== cols) {
-        throw new CsvParseError(
-          `Row ${rowNumber} has ${fields.length} fields but expected ${cols}.`,
-          rowNumber
-        );
-      }
-
-      if (records.length >= maxRows) {
-        throw new CsvParseError(
-          `Row limit of ${maxRows} exceeded.`,
-          rowNumber
-        );
-      }
-
-      const values = castRow
-        ? castRow(fields, quoted, rowNumber, headers)
-        : fields;
-
-      const record = Object.create(null);
-      for (let j = 0; j < headers.length; j++) {
-        record[headers[j]] = values[j];
-      }
-      records.push(record);
-    }
-
-    return records;
+    cols = headers.length;
+    headersDone = true;
+  } else if (headersOpt === false) {
+    headersDone = true;
   }
 
-  const headerRow = rows[0];
-  const headers = headerRow.fields;
+  return function processRow(tokenRow) {
+    const { fields, quoted, rowNumber } = tokenRow;
 
-  const seen = new Set();
-  for (const h of headers) {
-    if (seen.has(h)) {
-      throw new CsvParseError(
-        `Duplicate header name "${h}".`,
-        headerRow.rowNumber
-      );
+    // headers:true — first row becomes the header
+    if (!headersDone) {
+      headers = fields;
+      const seen = new Set();
+      for (const h of headers) {
+        if (seen.has(h)) throw new CsvParseError(`Duplicate header name "${h}".`, rowNumber);
+        seen.add(h);
+      }
+      cols = headers.length;
+      headersDone = true;
+      return null; // header row, no record emitted
     }
-    seen.add(h);
-  }
 
-  const records = [];
+    // set expected column count from first data row when headers:false
+    if (cols === -1) cols = fields.length;
 
-  for (let i = 1; i < rows.length; i++) {
-    const { fields, quoted, rowNumber } = rows[i];
-
-    if (fields.length !== headers.length) {
+    if (fields.length !== cols) {
       throw new CsvParseError(
-        `Row ${rowNumber} has ${fields.length} fields but expected ${headers.length}.`,
+        `Row ${rowNumber} has ${fields.length} fields but expected ${cols}.`,
         rowNumber
       );
     }
 
-    if (records.length >= maxRows) {
-      throw new CsvParseError(
-        `Row limit of ${maxRows} exceeded.`,
-        rowNumber
-      );
+    if (count >= maxRows) {
+      throw new CsvParseError(`Row limit of ${maxRows} exceeded.`, rowNumber);
     }
 
-    const values = castRow
-      ? castRow(fields, quoted, rowNumber, headers)
-      : fields;
+    count++;
 
+    if (headersOpt === false) {
+      return castRow ? castRow(fields, quoted, rowNumber, null) : fields;
+    }
+
+    const values = castRow ? castRow(fields, quoted, rowNumber, headers) : fields;
     const record = Object.create(null);
-    for (let j = 0; j < headers.length; j++) {
-      record[headers[j]] = values[j];
-    }
+    for (let j = 0; j < headers.length; j++) record[headers[j]] = values[j];
+    return record;
+  };
+}
 
-    records.push(record);
+export function buildRecords(rows, options = {}) {
+  if (rows.length === 0) return [];
+
+  const processRow = createRowBuilder(options);
+  const result = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const record = processRow(rows[i]);
+    if (record !== null) result.push(record);
   }
 
-  return records;
+  return result;
 }

@@ -26,6 +26,19 @@ console.log(data);
 // ]
 ```
 
+### Streaming
+
+For large files or streaming data, use `createParseStream(options)`. It returns a Node `Transform` stream in object mode:
+
+```js
+import fs from "node:fs";
+import { createParseStream } from "csv-easy";
+
+fs.createReadStream("data.csv")
+  .pipe(createParseStream({ cast: true }))
+  .on("data", (row) => console.log(row));
+```
+
 By default all values are returned as **strings**. Enable type casting with the `cast` option to convert numbers, booleans, nulls, and dates automatically.
 
 ## Options

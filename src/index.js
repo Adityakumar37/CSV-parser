@@ -1,8 +1,14 @@
 import { Tokenizer, CsvParseError } from "./tokenizer.js";
 import { buildRecords } from "./parser.js";
 import { validateOptions } from "./options.js";
+import { createParseStream as _createParseStream } from "./stream.js";
 
 export { CsvParseError };
+
+export function createParseStream(options = {}) {
+  validateOptions(options);
+  return _createParseStream(options);
+}
 
 /** Parse CSV text. */
 export function parseCSV(input, options = {}) {
