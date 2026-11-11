@@ -1,180 +1,68 @@
-/**
- * caster.js – Phase 3: type casting for csv-easy
- *
- * Exports a single factory that returns a castRow(fields, quoted, rowNumber, headers)
- * function, or null when casting is disabled.
- */
-
 import { CsvParseError } from "./tokenizer.js";
 
-// ─── Strict-match patterns ──────────────────────────────────────────────────
-
-/** Matches strict decimal integers and floats: -0, 0, 123, -45, 3.14, -0.5 */
 const NUMBER_RE = /^-?(0|[1-9]\d*)(\.\d+)?$/;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2}))?$/;
 
-/** Matches strict ISO 8601 date (YYYY-MM-DD) or datetime (with optional ms and tz). */
-const DATE_RE =
-  /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2}))?$/;
-
-// ─── Built-in rule implementations ──────────────────────────────────────────
-
-/**
- * Try to cast a strict decimal number string.
- * Returns the number, or undefined if it should stay a string.
- */
-function castNumber(value) {
-  if (!NUMBER_RE.test(value)) return undefined;
-
-  const n = Number(value);
-
-  // Reject non-finite results (should never happen with the regex, but guard).
+function tryNumber(val) {
+  if (!NUMBER_RE.test(val)) return undefined;
+  const n = Number(val);
   if (!Number.isFinite(n)) return undefined;
-
-  // If the value looks like an integer (no dot), it must be a safe integer.
-  if (!value.includes(".")) {
+  if (!val.includes(".")) {
     if (!Number.isSafeInteger(n)) return undefined;
   } else {
-    // For floats, check round-trip: converting back to string must match
-    // the original to ensure no precision loss.
-    if (String(n) !== value) {
-      return undefined;
-    }
+    // round-trip check: catch floats that lose precision
+    if (String(n) !== val) return undefined;
   }
-
   return n;
 }
 
-/**
- * Try to cast "true" / "false" to boolean.
- */
-function castBoolean(value) {
-  if (value === "true") return true;
-  if (value === "false") return false;
-  return undefined;
-}
-
-/**
- * Cast a strict ISO 8601 date string to a Date object.
- * Returns undefined if the string doesn't match or the date is invalid.
- */
-function castDate(value) {
-  if (!DATE_RE.test(value)) return undefined;
-
-  const d = new Date(value);
-
-  // Invalid date (e.g. 2024-02-31)
+function tryDate(val) {
+  if (!DATE_RE.test(val)) return undefined;
+  const d = new Date(val);
   if (Number.isNaN(d.getTime())) return undefined;
-
-  // For date-only strings (YYYY-MM-DD), validate that the components match
-  // to catch things like 2024-02-31 → Mar 2 rollover.
-  if (!value.includes("T")) {
-    const [y, m, day] = value.split("-").map(Number);
-    if (
-      d.getUTCFullYear() !== y ||
-      d.getUTCMonth() + 1 !== m ||
-      d.getUTCDate() !== day
-    ) {
-      return undefined;
-    }
-  } else {
-    // For datetime strings, also validate the date part didn't roll over.
-    const datePart = value.slice(0, 10);
-    const [y, m, day] = datePart.split("-").map(Number);
-    // Use the appropriate getter based on whether timezone info is present
-    const hasTimezone = /Z|[+-]\d{2}:\d{2}$/.test(value);
-    if (hasTimezone) {
-      if (
-        d.getUTCFullYear() !== y ||
-        d.getUTCMonth() + 1 !== m ||
-        d.getUTCDate() !== day
-      ) {
-        return undefined;
-      }
-    }
+  // check date components didn't roll over (e.g. 2024-02-31 -> Mar 2)
+  const [y, m, day] = val.slice(0, 10).split("-").map(Number);
+  if (d.getUTCFullYear() !== y || d.getUTCMonth() + 1 !== m || d.getUTCDate() !== day) {
+    return undefined;
   }
-
   return d;
 }
 
-// ─── Factory ────────────────────────────────────────────────────────────────
-
-/**
- * Resolve the `cast` option into a set of enabled built-in rules.
- *
- * @param {boolean|object} castOpt  The `cast` option value (true or per-rule object).
- * @returns {{ number: boolean, boolean: boolean, null: boolean, date: boolean }}
- */
-function resolveRules(castOpt) {
-  if (castOpt === true) {
-    return { number: true, boolean: true, null: true, date: false };
+function applyRules(val, rules) {
+  if (rules.null && val === "") return null;
+  if (rules.boolean && val === "true") return true;
+  if (rules.boolean && val === "false") return false;
+  if (rules.number) {
+    const n = tryNumber(val);
+    if (n !== undefined) return n;
   }
-  // castOpt is a per-rule object
+  if (rules.date) {
+    const d = tryDate(val);
+    if (d !== undefined) return d;
+  }
+  return val;
+}
+
+function resolveRules(opt) {
+  if (opt === true) return { number: true, boolean: true, null: true, date: false };
   return {
-    number: castOpt.number !== undefined ? castOpt.number : true,
-    boolean: castOpt.boolean !== undefined ? castOpt.boolean : true,
-    null: castOpt.null !== undefined ? castOpt.null : true,
-    date: castOpt.date !== undefined ? castOpt.date : false,
+    number: opt.number !== undefined ? opt.number : true,
+    boolean: opt.boolean !== undefined ? opt.boolean : true,
+    null: opt.null !== undefined ? opt.null : true,
+    date: opt.date !== undefined ? opt.date : false,
   };
 }
 
-/**
- * Apply built-in casting rules to a single unquoted value.
- */
-function applyBuiltinRules(value, rules) {
-  // null rule: empty unquoted field → null
-  if (rules.null && value === "") return null;
+export function buildCaster(opt) {
+  if (!opt) return null;
 
-  // boolean
-  if (rules.boolean) {
-    const b = castBoolean(value);
-    if (b !== undefined) return b;
-  }
-
-  // number
-  if (rules.number) {
-    const n = castNumber(value);
-    if (n !== undefined) return n;
-  }
-
-  // date (opt-in)
-  if (rules.date) {
-    const d = castDate(value);
-    if (d !== undefined) return d;
-  }
-
-  return value;
-}
-
-/**
- * Build a castRow function from the `cast` option.
- *
- * @param {boolean|function|object} castOpt  The validated `cast` option.
- * @returns {function|null}  A castRow(fields, quotedFlags, rowNumber, headers) function,
- *   or null when casting is disabled.
- */
-export function buildCaster(castOpt) {
-  if (!castOpt) return null;
-
-  // ── Custom function ────────────────────────────────────────────────────
-  if (typeof castOpt === "function") {
-    /**
-     * @param {string[]} fields
-     * @param {boolean[]} quotedFlags
-     * @param {number} rowNumber  1-based
-     * @param {string[]|null} headers  null when headers: false
-     */
-    return function castRowCustom(fields, quotedFlags, rowNumber, headers) {
-      const result = new Array(fields.length);
+  if (typeof opt === "function") {
+    return function castRow(fields, quoted, rowNumber, headers) {
+      const result = [];
       for (let i = 0; i < fields.length; i++) {
         const column = headers ? headers[i] : i;
-        const context = {
-          column,
-          index: i,
-          row: rowNumber,
-          quoted: quotedFlags[i],
-        };
         try {
-          result[i] = castOpt(fields[i], context);
+          result.push(opt(fields[i], { column, index: i, row: rowNumber, quoted: quoted[i] }));
         } catch (err) {
           throw new CsvParseError(
             `Cast function error at row ${rowNumber}, column "${column}": ${err.message}`,
@@ -186,20 +74,13 @@ export function buildCaster(castOpt) {
     };
   }
 
-  // ── Built-in rules (true or per-rule object) ──────────────────────────
-  const rules = resolveRules(castOpt);
-
-  return function castRowBuiltin(fields, quotedFlags, _rowNumber, _headers) {
-    const result = new Array(fields.length);
+  const rules = resolveRules(opt);
+  return function castRow(fields, quoted) {
+    const result = [];
     for (let i = 0; i < fields.length; i++) {
-      // Quoted fields are never auto-cast.
-      if (quotedFlags[i]) {
-        result[i] = fields[i];
-      } else {
-        result[i] = applyBuiltinRules(fields[i], rules);
-      }
+      // quoted fields are never auto-cast
+      result.push(quoted[i] ? fields[i] : applyRules(fields[i], rules));
     }
     return result;
   };
 }
-
