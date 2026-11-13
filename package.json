@@ -21,12 +21,17 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/REPLACE_WITH_USERNAME/REPLACE_WITH_REPOSITORY.git"
+    "url": "git+https://github.com/Adityakumar37/CSV-parser.git"
   },
+  "homepage": "https://github.com/Adityakumar37/CSV-parser#readme",
+  "bugs": {
+  "url": "https://github.com/Adityakumar37/CSV-parser/issues"
+},
+
   "engines": {
     "node": ">=18"
   },
-  "author": "YOUR NAME <you@example.com>",
+  "author": "Aditya Kumar",
   "license": "MIT",
   "sideEffects": false,
   "scripts": {
